@@ -1,0 +1,41 @@
+name: Security Scan with OWASP ZAP
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Pull OWASP ZAP Docker image
+        run: docker pull owasp/zap2docker-stable
+
+      - name: Start OWASP ZAP daemon
+        run: |
+          docker run -d -u zap -p 8080:8080 --name zap owasp/zap2docker-stable zap.sh -daemon -port 8080 -host 0.0.0.0
+
+      - name: Run Active Scan on target
+        run: |
+          docker exec zap zap-cli quick-scan --self-contained --start-options '-config api.disablekey=true' --spider --scanners all http://TU_API_AQUI
+
+      - name: Generate report
+        run: |
+          docker exec zap zap-cli report -o zap_report.html -f html
+
+      - name: Check for critical vulnerabilities and fail if any found
+        run: |
+          CRITICAL_COUNT=$(docker exec zap zap-cli alerts -l Critical | wc -l)
+          echo "Critical vulnerabilities found: $CRITICAL_COUNT"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "Failing pipeline due to critical vulnerabilities."
+            exit 1
+          fi
